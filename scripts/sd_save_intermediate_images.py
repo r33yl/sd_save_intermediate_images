@@ -28,6 +28,7 @@ from modules.images import save_image, FilenameGenerator, get_next_sequence_numb
 from modules.shared import opts, state, cmd_opts
 
 from ffmpy import FFmpeg
+from PIL import Image as PILImage
 import gradio as gr; gr.__version__
 
 # New args, regex for npp, find: (ssii_hires)(?=,)
@@ -264,11 +265,57 @@ def make_video_or_bat(p, ssii_is_active, ssii_final_save, ssii_intermediate_type
     if ssii_add_first_frames > 0 or ssii_add_last_frames > 0:
         ssii_add_last_frames_logic(p, ssii_add_first_frames, ssii_add_last_frames, ssii_debug)
 
-    p.intermed_files.sort(key=lambda x: (x[0], x[2].startswith("link:")))
+    p.intermed_files.sort(key=lambda x: (x[0], x[2].startswith("link:") if x[2] is not None else False))
+
+    # Use PIL for GIF creation - no ffmpeg required
+    if video_bat_mode == "video" and ssii_video_format == "gif":
+        video_out_dir = ssii_video_output_path.strip() if ssii_video_output_path and ssii_video_output_path.strip() else None
+        seq_to_org = {s: o for (_, o, s) in p.intermed_files if s and not s.startswith("link:")}
+        for batch_idx, intermed_pattern in enumerate(p.intermed_pattern.values()):
+            vid_file = re.sub(r'-?%%%-?', '', intermed_pattern) + ".gif"
+            if video_out_dir:
+                os.makedirs(video_out_dir, exist_ok=True)
+                path_vid_file = os.path.join(video_out_dir, vid_file)
+            else:
+                path_vid_file = os.path.join(p.intermed_outpath, vid_file)
+            frames = []
+            for (batch_no, name_org, name_seq) in p.intermed_files:
+                if batch_no != batch_idx:
+                    continue
+                if name_seq and name_seq[:5] == "link:":
+                    name_org = seq_to_org.get(name_seq[5:], name_org)
+                frame_path = os.path.join(p.intermed_outpath, name_org)
+                if os.path.exists(frame_path):
+                    try:
+                        img = PILImage.open(frame_path)
+                        frames.append(img.copy())
+                        img.close()
+                    except Exception as e:
+                        print(f"Warning: could not open frame: {e}")
+            if frames:
+                duration = max(1, int(1000 / max(1, ssii_video_fps)))
+                try:
+                    frames[0].save(
+                        path_vid_file,
+                        format='GIF',
+                        append_images=frames[1:],
+                        save_all=True,
+                        duration=duration,
+                        loop=0
+                    )
+                    print(f"GIF saved: {path_vid_file}")
+                except Exception as e:
+                    print(f"Error creating GIF: {e}")
+        return
 
     hard_links = True
     for (batch_no, name_org, name_seq) in p.intermed_files:
+        if name_seq is None:
+            continue
         path_name_org = os.path.join(p.intermed_outpath, name_org)
+        if not os.path.exists(path_name_org):
+            logger.warning(f"Skipping missing file: {filename_clean(path_name_org)}")
+            continue
         if name_seq[:5] == "link:":
             path_name_seq = os.path.join(p.intermed_outpath, name_seq[5:])
             try:
@@ -359,6 +406,8 @@ def make_video_or_bat(p, ssii_is_active, ssii_final_save, ssii_intermediate_type
     if video_bat_mode == "video":
         # Back to original numbering
         for (batch_no, name_org, name_seq) in p.intermed_files:
+            if name_seq is None:
+                continue
             path_name_org = os.path.join(p.intermed_outpath, name_org)
             if name_seq[:5] == "link:":
                 path_name_seq = os.path.join(p.intermed_outpath, name_seq[5:])
