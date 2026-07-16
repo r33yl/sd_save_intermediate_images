@@ -31,15 +31,16 @@ from ffmpy import FFmpeg
 from PIL import Image as PILImage
 import gradio as gr; gr.__version__
 
-# New args, regex for npp, find: (ssii_hires)(?=,)
-# replace: \1, ssii_add_last_frames, ssii_add_first_frames
-# plus debug
-
 orig_callback_state_KDiffusionSampler = KDiffusionSampler.callback_state
 orig_callback_state_TimestepsSampler = TimestepsSampler.callback_state
 orig_callback_state = None
 ui_config_backup = os.path.join(scripts.basedir(), "ui-config_backup.json")
 video_bat_mode = ""
+
+# naming_choices[0] = "number-step-suffix"  →  00001-005-seed
+# naming_choices[1] = "number-suffix-step"  →  00001-seed-005
+naming_choices = ["Step before suffix  (…-005-seed)", "Step after suffix  (…-seed-005)"]
+
 ui_items = {
     "ssii_is_active": "Save intermediate images",
     "ssii_full_quality": "Save intermediates in full quality (ignores Live preview method)",
@@ -49,7 +50,8 @@ ui_items = {
     "ssii_every_n": "Save every N images",
     "ssii_start_at_n": "Start at N images (must be 0 = start at the beginning or a multiple of 'Save every N images')",
     "ssii_stop_at_n": "Stop at N images (must be 0 = don't stop early or a multiple of 'Save every N images')",
-    "ssii_mode": "Mode",
+    "ssii_naming": "File naming — step position",
+    "ssii_make_video": "Generate video after generation",
     "ssii_video_format": "Format",
     "ssii_mp4_parms": "mp4 parameters",
     "ssii_video_fps": "fps",
@@ -59,16 +61,15 @@ ui_items = {
     "ssii_seconds": "Approx. how many seconds should the video run?",
     "ssii_lores": "lores",
     "ssii_hires": "hires",
-	"ssii_ffmpeg_bat": "Create Windows ffmpeg bat-files for lores and hires. Changes numbering logic.",
-	"ssii_bat_only": "Only bat-files, no video",
+    "ssii_ffmpeg_bat": "Create Windows ffmpeg bat-files for lores and hires. Changes numbering logic.",
+    "ssii_bat_only": "Only bat-files, no video",
     "ssii_debug": "Debug",
     "ssii_live_preview": "Enable live preview on image viewer",
-    "ssii_auto_video": "Auto-generate video after each generation",
     "ssii_video_output_path": "Custom video output path (leave empty for default)",
     "ssii_intermediate_format": "Intermediate image format",
     "ssii_intermediate_quality": "Compression quality (JPEG/WebP)",
 }
-mode_choices = ["Make a video file", "Save intermediates with image number as suffix", "Standard operation"]
+
 debug_setup = False
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,13 @@ def ui_setting_set(ui_settings, key, value):
     ui_settings[f"customscript/{this_module}/img2img/{key}/value"] = value
     return ui_settings
 
-def ssii_save_settings_do(ssii_is_active, ssii_final_save, ssii_full_quality, ssii_live_preview, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_auto_video, ssii_video_output_path, ssii_intermediate_format, ssii_intermediate_quality):
+
+def ssii_save_settings_do(ssii_is_active, ssii_final_save, ssii_full_quality, ssii_live_preview,
+                           ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n,
+                           ssii_naming, ssii_make_video, ssii_video_format, ssii_mp4_parms,
+                           ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth,
+                           ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only,
+                           ssii_debug, ssii_video_output_path, ssii_intermediate_format, ssii_intermediate_quality):
     ui_config_file = cmd_opts.ui_config_file
     ui_settings = {}
 
@@ -190,16 +197,22 @@ def ffmpeg(inputs=None, outputs=None):
 
     return (ff_ffmpeg, ff_bat)
 
-def make_video(p, ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_auto_video, ssii_video_output_path, ssii_intermediate_format):
+
+def make_video(p, ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n,
+               ssii_start_at_n, ssii_stop_at_n, ssii_naming, ssii_make_video, ssii_video_format,
+               ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames,
+               ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only,
+               ssii_debug, ssii_video_output_path, ssii_intermediate_format):
     global video_bat_mode
     logger.debug(f"func: {sys._getframe(0).f_code.co_name}")
-    logger.debug("ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only:")
-    logger.debug(f"{ssii_is_active}, {ssii_final_save}, {ssii_intermediate_type}, {ssii_every_n}, {ssii_start_at_n}, {ssii_stop_at_n}, {ssii_mode}, {ssii_video_format}, {ssii_mp4_parms}, {ssii_video_fps}, {ssii_add_first_frames}, {ssii_add_last_frames}, {ssii_smooth}, {ssii_seconds}, {ssii_lores}, {ssii_hires}, {ssii_ffmpeg_bat}, {ssii_bat_only}")
-    if ssii_is_active and (ssii_mode == mode_choices[0] or ssii_auto_video) and ((not state.skipped and not state.interrupted) or p.intermed_stopped):
+    logger.debug("ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_naming, ssii_make_video, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_video_output_path, ssii_intermediate_format:")
+    logger.debug(f"{ssii_is_active}, {ssii_final_save}, {ssii_intermediate_type}, {ssii_every_n}, {ssii_start_at_n}, {ssii_stop_at_n}, {ssii_naming}, {ssii_make_video}, {ssii_video_format}, {ssii_mp4_parms}, {ssii_video_fps}, {ssii_add_first_frames}, {ssii_add_last_frames}, {ssii_smooth}, {ssii_seconds}, {ssii_lores}, {ssii_hires}, {ssii_ffmpeg_bat}, {ssii_bat_only}, {ssii_debug}, {ssii_video_output_path}, {ssii_intermediate_format},")
+    
+    if ssii_is_active and ssii_make_video and (not state.skipped and not state.interrupted or p.intermed_stopped):
         do_video = True
         do_bat = False
         # bat files only apply to explicit video mode, not auto-video
-        if ssii_ffmpeg_bat and hr_check(p) and ssii_mode == mode_choices[0]:
+        if ssii_ffmpeg_bat and hr_check(p):
             do_bat = True
             if ssii_bat_only:
                 do_video = False
@@ -207,15 +220,29 @@ def make_video(p, ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_
         intermed_files_store = p.intermed_files
         if do_video:
             video_bat_mode = "video"
-            make_video_or_bat(p, ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_video_output_path, ssii_intermediate_format)
+            make_video_or_bat(p, ssii_is_active, ssii_final_save, ssii_intermediate_type,
+                              ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_naming,
+                              ssii_video_format, ssii_mp4_parms, ssii_video_fps,
+                              ssii_add_first_frames, ssii_add_last_frames, ssii_smooth,
+                              ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only,
+                              ssii_debug, ssii_video_output_path, ssii_intermediate_format)
         if do_bat:
             p.intermed_files = intermed_files_store
             video_bat_mode = "bat_lores"
-            make_video_or_bat(p, ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_video_output_path, ssii_intermediate_format)
+            make_video_or_bat(p, ssii_is_active, ssii_final_save, ssii_intermediate_type,
+                              ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_naming,
+                              ssii_video_format, ssii_mp4_parms, ssii_video_fps,
+                              ssii_add_first_frames, ssii_add_last_frames, ssii_smooth,
+                              ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only,
+                              ssii_debug, ssii_video_output_path, ssii_intermediate_format)
             p.intermed_files = intermed_files_store
             video_bat_mode = "bat_hires"
-            make_video_or_bat(p, ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_video_output_path, ssii_intermediate_format)
-
+            make_video_or_bat(p, ssii_is_active, ssii_final_save, ssii_intermediate_type,
+                              ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_naming,
+                              ssii_video_format, ssii_mp4_parms, ssii_video_fps,
+                              ssii_add_first_frames, ssii_add_last_frames, ssii_smooth,
+                              ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only,
+                              ssii_debug, ssii_video_output_path, ssii_intermediate_format)
     return
 
 def link_file(path_name_org, path_name_seq, hard_links):
@@ -227,7 +254,12 @@ def link_file(path_name_org, path_name_seq, hard_links):
     
     return
 
-def make_video_or_bat(p, ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_video_output_path, ssii_intermediate_format):
+
+def make_video_or_bat(p, ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n,
+                      ssii_start_at_n, ssii_stop_at_n, ssii_naming, ssii_video_format,
+                      ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames,
+                      ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat,
+                      ssii_bat_only, ssii_debug, ssii_video_output_path, ssii_intermediate_format):
     logger.debug(f"func: {sys._getframe(0).f_code.co_name}")
     logger.debug(f"video mode: {video_bat_mode}")
     if video_bat_mode == "video":
@@ -249,8 +281,8 @@ def make_video_or_bat(p, ssii_is_active, ssii_final_save, ssii_intermediate_type
             parts = filename.split("-")
             current_step = parts[1]
             if (lores and int(current_step) < int(p.intermed_hires_start)) or (hires and int(current_step) >= int(p.intermed_hires_start)):
-                    intermed_files_remain.append((batch_no, name_org, name_seq))
-                    logger.debug(f"Not removed: {filename_clean(name_org)}")
+                intermed_files_remain.append((batch_no, name_org, name_seq))
+                logger.debug(f"Not removed: {filename_clean(name_org)}")
         p.intermed_files = intermed_files_remain
 
     # ffmpeg requires sequential numbers in filenames (that is exactly +1)
@@ -270,7 +302,7 @@ def make_video_or_bat(p, ssii_is_active, ssii_final_save, ssii_intermediate_type
 
     p.intermed_files.sort(key=lambda x: (x[0], x[2].startswith("link:") if x[2] is not None else False))
 
-    # Use PIL for GIF creation - no ffmpeg required
+    # GIF via PIL — no ffmpeg needed
     if video_bat_mode == "video" and ssii_video_format == "gif":
         video_out_dir = ssii_video_output_path.strip() if ssii_video_output_path and ssii_video_output_path.strip() else None
         seq_to_org = {s: o for (_, o, s) in p.intermed_files if s and not s.startswith("link:")}
@@ -511,16 +543,16 @@ class Script(scripts.Script):
                     label=ui_items["ssii_stop_at_n"],
                     value="0"
                 )
+            with gr.Row():
+                ssii_naming = gr.Radio(
+                    label=ui_items["ssii_naming"],
+                    choices=naming_choices,
+                    value=naming_choices[0]
+                )
             with gr.Box():
                 with gr.Row():
-                    ssii_mode = gr.Radio(
-                        label=ui_items["ssii_mode"],
-                        choices=mode_choices,
-                        value=mode_choices[2]
-                    )
-                with gr.Row():
-                    ssii_auto_video = gr.Checkbox(
-                        label=ui_items["ssii_auto_video"],
+                    ssii_make_video = gr.Checkbox(
+                        label=ui_items["ssii_make_video"],
                         value=False
                     )
                 with gr.Row():
@@ -582,6 +614,12 @@ class Script(scripts.Script):
                             value=False
                         )
             with gr.Row():
+                ssii_video_output_path = gr.Textbox(
+                    label=ui_items["ssii_video_output_path"],
+                    placeholder="e.g. C:/videos or leave empty to save next to intermediates",
+                    value=""
+                )
+            with gr.Row():
                 ssii_debug = gr.Checkbox(
                     label=ui_items["ssii_debug"],
                     value=False
@@ -589,12 +627,7 @@ class Script(scripts.Script):
             
                 ssii_live_preview = gr.Checkbox(
                     label=ui_items["ssii_live_preview"],
-                    value=False)
-            with gr.Row():
-                ssii_video_output_path = gr.Textbox(
-                    label=ui_items["ssii_video_output_path"],
-                    placeholder="e.g. C:/videos or leave empty to save next to intermediates",
-                    value=""
+                    value=False
                 )
             open_image_viewer_button = gr.Button("Open Image Viewer")
             open_image_viewer_button.click(fn=self.open_image_viewer)  
@@ -602,11 +635,22 @@ class Script(scripts.Script):
 
         ssii_save_settings.click(
             fn=ssii_save_settings_do,
-            inputs=[ssii_is_active, ssii_final_save, ssii_full_quality, ssii_live_preview, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_auto_video, ssii_video_output_path, ssii_intermediate_format, ssii_intermediate_quality],
+            inputs=[ssii_is_active, ssii_final_save, ssii_full_quality, ssii_live_preview,
+                    ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n,
+                    ssii_naming, ssii_make_video, ssii_video_format, ssii_mp4_parms,
+                    ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth,
+                    ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only,
+                    ssii_debug, ssii_video_output_path, ssii_intermediate_format, ssii_intermediate_quality],
             outputs=[ssii_message],
         )
 
-        return [ssii_is_active, ssii_final_save, ssii_full_quality, ssii_live_preview, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_auto_video, ssii_video_output_path, ssii_intermediate_format, ssii_intermediate_quality]
+        return [ssii_is_active, ssii_final_save, ssii_full_quality, ssii_live_preview,
+                ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n,
+                ssii_naming, ssii_make_video, ssii_video_format, ssii_mp4_parms,
+                ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth,
+                ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only,
+                ssii_debug, ssii_video_output_path, ssii_intermediate_format, ssii_intermediate_quality]
+
     def open_image_viewer(self):
         filepath = os.path.join(os.path.dirname(__file__), 'viewer', 'Image Viewer.html')
         webbrowser.open_new('file://' + os.path.abspath(filepath))
@@ -655,7 +699,12 @@ class Script(scripts.Script):
 
         return (fullfn)
 
-    def process(self, p, ssii_is_active, ssii_final_save, ssii_full_quality, ssii_live_preview, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_auto_video, ssii_video_output_path, ssii_intermediate_format, ssii_intermediate_quality):
+    def process(self, p, ssii_is_active, ssii_final_save, ssii_full_quality, ssii_live_preview,
+                ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n,
+                ssii_naming, ssii_make_video, ssii_video_format, ssii_mp4_parms, ssii_video_fps,
+                ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds,
+                ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug,
+                ssii_video_output_path, ssii_intermediate_format, ssii_intermediate_quality):
         global logger, debug_setup
         if ssii_is_active or ssii_live_preview:
 
@@ -691,7 +740,7 @@ class Script(scripts.Script):
             p.intermed_stopped = False
             p.intermed_is_active = ssii_is_active
             p.intermed_final_save = ssii_final_save
-            p.intermed_video = ssii_mode
+            p.intermed_make_video = ssii_make_video
             
             def callback_state(self, d):
                 logger.debug(f"func: {sys._getframe(0).f_code.co_name}")
@@ -739,7 +788,13 @@ class Script(scripts.Script):
                             if hr:
                                 delattr(p, "intermed_hires_start")
                             # Make video for previous batch_count
-                            make_video(p, ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_auto_video, ssii_video_output_path, ssii_intermediate_format)
+                            make_video(p, ssii_is_active, ssii_final_save, ssii_intermediate_type,
+                                       ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_naming,
+                                       ssii_make_video, ssii_video_format, ssii_mp4_parms,
+                                       ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames,
+                                       ssii_smooth, ssii_seconds, ssii_lores, ssii_hires,
+                                       ssii_ffmpeg_bat, ssii_bat_only, ssii_debug,
+                                       ssii_video_output_path, ssii_intermediate_format)
                     else:
                         p.intermed_batch_iter = p.iteration
 
@@ -752,8 +807,8 @@ class Script(scripts.Script):
                         if not hasattr(p, 'intermed_hires_start'):
                             p.intermed_hires_start = abs_step
 
-                logger.debug("ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug:")
-                logger.debug(f"{ssii_intermediate_type}, {ssii_every_n}, {ssii_start_at_n}, {ssii_stop_at_n}, {ssii_mode}, {ssii_video_format}, {ssii_mp4_parms}, {ssii_video_fps}, {ssii_add_first_frames}, {ssii_add_last_frames}, {ssii_smooth}, {ssii_seconds}, {ssii_lores}, {ssii_hires}, {ssii_ffmpeg_bat}, {ssii_bat_only}, {ssii_debug}")
+                logger.debug("ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_naming, ssii_make_video, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_video_output_path, ssii_intermediate_format:")
+                logger.debug(f"{ssii_is_active}, {ssii_final_save}, {ssii_intermediate_type}, {ssii_every_n}, {ssii_start_at_n}, {ssii_stop_at_n}, {ssii_naming}, {ssii_make_video}, {ssii_video_format}, {ssii_mp4_parms}, {ssii_video_fps}, {ssii_add_first_frames}, {ssii_add_last_frames}, {ssii_smooth}, {ssii_seconds}, {ssii_lores}, {ssii_hires}, {ssii_ffmpeg_bat}, {ssii_bat_only}, {ssii_debug}, {ssii_video_output_path}, {ssii_intermediate_format},")
                 logger.debug(f"Step, abs_step, hr, hr_active: {current_step}, {abs_step}, {hr}, {hr_active}")
 
                 # ssii_start_at_n must be a multiple of ssii_every_n
@@ -851,10 +906,15 @@ class Script(scripts.Script):
                             intermed_seed = int(p.all_seeds[intermed_seed_index])
                             logger.debug(f"intermed_seed_index, intermed_seed: {intermed_seed_index}, {intermed_seed}")
                             intermed_suffix = p.intermed_outpath_suffix.replace(str(int(p.seed)), str(intermed_seed), 1)
-                            if ssii_mode == mode_choices[1]:
+
+                            # naming: step position controlled by ssii_naming
+                            if ssii_naming == naming_choices[1]:
+                                # number-suffix-step
                                 intermed_pattern = p.intermed_outpath_number[index] + "-" + intermed_suffix + "-%%%"
                             else:
+                                # number-step-suffix  (default)
                                 intermed_pattern = p.intermed_outpath_number[index] + "-%%%-" + intermed_suffix
+
                             p.intermed_pattern[intermed_seed] = intermed_pattern
                             filename = intermed_pattern.replace("%%%", f"{abs_step:03}")
 
@@ -888,7 +948,7 @@ class Script(scripts.Script):
                                         logger.debug(f"index, p.intermed_last[index]: {index}, {filename_clean(p.intermed_last[index][0])}, {filename_clean(p.intermed_last[index][1])}, {p.intermed_last[index][2]}")
                                 finally:
                                     opts.jpeg_quality = orig_jpeg_quality
-                    # Get current directory
+                            # Get current directory
                             current_dir = os.path.dirname(os.path.abspath(__file__))
                             file_path_temp = os.path.join(current_dir, 'viewer', 'saved.png')
                             image.save(file_path_temp)        
@@ -898,15 +958,25 @@ class Script(scripts.Script):
             setattr(KDiffusionSampler, "callback_state", callback_state)
             setattr(TimestepsSampler, "callback_state", callback_state)
 
-    def postprocess(self, p, processed, ssii_is_active, ssii_final_save, ssii_full_quality, ssii_live_preview, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_auto_video, ssii_video_output_path, ssii_intermediate_format, ssii_intermediate_quality):
+    def postprocess(self, p, processed, ssii_is_active, ssii_final_save, ssii_full_quality,
+                    ssii_live_preview, ssii_intermediate_type, ssii_every_n, ssii_start_at_n,
+                    ssii_stop_at_n, ssii_naming, ssii_make_video, ssii_video_format, ssii_mp4_parms,
+                    ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth,
+                    ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug,
+                    ssii_video_output_path, ssii_intermediate_format, ssii_intermediate_quality):
         logger.debug(f"func: {sys._getframe(0).f_code.co_name}")
         setattr(KDiffusionSampler, "callback_state", orig_callback_state_KDiffusionSampler)
         setattr(TimestepsSampler, "callback_state", orig_callback_state_TimestepsSampler)
 
         # Make video for last batch_count
-        make_video(p, ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n, ssii_start_at_n, ssii_stop_at_n, ssii_mode, ssii_video_format, ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames, ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only, ssii_debug, ssii_auto_video, ssii_video_output_path, ssii_intermediate_format)
+        make_video(p, ssii_is_active, ssii_final_save, ssii_intermediate_type, ssii_every_n,
+                   ssii_start_at_n, ssii_stop_at_n, ssii_naming, ssii_make_video, ssii_video_format,
+                   ssii_mp4_parms, ssii_video_fps, ssii_add_first_frames, ssii_add_last_frames,
+                   ssii_smooth, ssii_seconds, ssii_lores, ssii_hires, ssii_ffmpeg_bat, ssii_bat_only,
+                   ssii_debug, ssii_video_output_path, ssii_intermediate_format)
 
-def handle_image_saved(params : script_callbacks.ImageSaveParams):
+
+def handle_image_saved(params: script_callbacks.ImageSaveParams):
     logger.debug(f"func: {sys._getframe(0).f_code.co_name}")
     if hasattr(params.p, "intermed_is_active"):
         # Copy final image to intermediates folder
@@ -935,9 +1005,11 @@ def handle_image_saved(params : script_callbacks.ImageSaveParams):
 
                     # Add info for make video
                     params.p.intermed_files.append((index, file_new, None))
+
     # Copy the file to the specified directory as "saved.png"
     current_dir = current_dir = os.path.dirname(os.path.abspath(__file__))
     file_path_temp = os.path.join(current_dir, 'viewer', 'saved.png')
     shutil.copy(params.filename, file_path_temp)
     logger.debug(f"Image saved to {file_path_temp}")
+
 script_callbacks.on_image_saved(handle_image_saved)
