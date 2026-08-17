@@ -19,7 +19,6 @@ from modules.sd_samplers_kdiffusion import KDiffusionSampler
 try:
     from modules.sd_samplers_timesteps import CompVisSampler as TimestepsSampler, samplers_timesteps
 except:
-    # Fallback if webui is an old version without sd_samplers_timesteps
     class TimestepsSampler:
         callback_state = None
     from modules.sd_samplers_compvis import samplers_data_compvis as samplers_timesteps
@@ -489,149 +488,156 @@ class Script(scripts.Script):
 
     def ui(self, is_img2img):
         with gr.Accordion("Save intermediate images", open=False):
-            with gr.Row():
-                ssii_message = gr.HTML()
+
+            # ---------------- Level 0 (outside tabs) ----------------
             with gr.Row():
                 ssii_is_active = gr.Checkbox(
                     label=ui_items["ssii_is_active"],
+                    value=False
+                )
+                ssii_make_video = gr.Checkbox(
+                    label=ui_items["ssii_make_video"],
                     value=False
                 )
                 ssii_save_settings = gr.Button(
                     value=ui_items["ssii_save_settings"],
                     elem_id="ssii_save_settings"
                 )
-                
             with gr.Row():
-                ssii_final_save = gr.Checkbox(
-                    label=ui_items["ssii_final_save"],
-                    value=False
-                )
-                ssii_full_quality = gr.Checkbox(
-                    label=ui_items["ssii_full_quality"],
-                    value=False
-                )
+                ssii_message = gr.HTML()
 
-            with gr.Row():
-                ssii_intermediate_type = gr.Radio(
-                    label=ui_items["ssii_intermediate_type"],
-                    choices=["Denoised", "Noisy", "According to Live preview subject setting"],
-                    value="Denoised"
-                )  
-            with gr.Row():
-                ssii_intermediate_format = gr.Radio(
-                    label=ui_items["ssii_intermediate_format"],
-                    choices=["png", "jpeg", "webp"],
-                    value="png"
-                )
-            with gr.Row():
-                ssii_intermediate_quality = gr.Slider(
-                    1, 100, 90, step=1,
-                    label=ui_items["ssii_intermediate_quality"]
-                )
-            with gr.Row():
-                ssii_every_n = gr.Number(
-                    label=ui_items["ssii_every_n"],
-                    value="5"
-                )
-            with gr.Row():
-                ssii_start_at_n = gr.Number(
-                    label=ui_items["ssii_start_at_n"],
-                    value="0"
-                )
-            with gr.Row():
-                ssii_stop_at_n = gr.Number(
-                    label=ui_items["ssii_stop_at_n"],
-                    value="0"
-                )
-            with gr.Row():
-                ssii_naming = gr.Radio(
-                    label=ui_items["ssii_naming"],
-                    choices=naming_choices,
-                    value=naming_choices[0]
-                )
-            with gr.Box():
-                with gr.Row():
-                    ssii_make_video = gr.Checkbox(
-                        label=ui_items["ssii_make_video"],
-                        value=False
-                    )
-                with gr.Row():
+            # ---------------- Tabs ----------------
+            with gr.Tabs():
+
+                with gr.Tab("Images"):
+                    with gr.Row():
+                        ssii_final_save = gr.Checkbox(
+                            label=ui_items["ssii_final_save"],
+                            value=False
+                        )
+                        ssii_full_quality = gr.Checkbox(
+                            label=ui_items["ssii_full_quality"],
+                            value=False
+                        )
+                    with gr.Row():
+                        ssii_intermediate_type = gr.Radio(
+                            label=ui_items["ssii_intermediate_type"],
+                            choices=["Denoised", "Noisy", "According to Live preview subject setting"],
+                            value="Denoised"
+                        )
+                    with gr.Row():
+                        ssii_intermediate_format = gr.Radio(
+                            label=ui_items["ssii_intermediate_format"],
+                            choices=["png", "jpeg", "webp"],
+                            value="png"
+                        )
+                    with gr.Row():
+                        ssii_intermediate_quality = gr.Slider(
+                            1, 100, 90, step=1,
+                            label=ui_items["ssii_intermediate_quality"]
+                        )
+                    with gr.Row():
+                        ssii_every_n = gr.Number(
+                            label=ui_items["ssii_every_n"],
+                            value="5"
+                        )
+                    with gr.Row():
+                        ssii_start_at_n = gr.Number(
+                            label=ui_items["ssii_start_at_n"],
+                            value="0"
+                        )
+                    with gr.Row():
+                        ssii_stop_at_n = gr.Number(
+                            label=ui_items["ssii_stop_at_n"],
+                            value="0"
+                        )
+                    with gr.Row():
+                        ssii_naming = gr.Radio(
+                            label=ui_items["ssii_naming"],
+                            choices=naming_choices,
+                            value=naming_choices[0]
+                        )
+
+                with gr.Tab("Video"):
                     with gr.Box():
-                        ssii_video_format = gr.Radio(
-                            label=ui_items["ssii_video_format"],
-                            choices=["gif", "webm", "mp4"],
-                            value="mp4"
+                        with gr.Row():
+                            ssii_video_format = gr.Radio(
+                                label=ui_items["ssii_video_format"],
+                                choices=["gif", "webm", "mp4"],
+                                value="mp4"
+                            )
+                            ssii_mp4_parms = gr.Radio(
+                                label=ui_items["ssii_mp4_parms"],
+                                choices=["h264", "h265/hevc", "av1"],
+                                value="h264"
+                            )
+                        ssii_video_fps = gr.Number(
+                            label=ui_items["ssii_video_fps"],
+                            value=2
                         )
-                        ssii_mp4_parms = gr.Radio(
-                            label=ui_items["ssii_mp4_parms"],
-                            choices=["h264", "h265/hevc", "av1"],
-                            value="h264"
-                        )
-                    ssii_video_fps = gr.Number(
-                        label=ui_items["ssii_video_fps"],
-                        value=2
-                    )
-                with gr.Box():
+                    with gr.Box():
+                        with gr.Row():
+                            ssii_add_first_frames = gr.Number(
+                                label=ui_items["ssii_add_first_frames"],
+                                value=0
+                            )
+                            ssii_add_last_frames = gr.Number(
+                                label=ui_items["ssii_add_last_frames"],
+                                value=0
+                            )
+                    with gr.Box():
+                        with gr.Row():
+                            ssii_smooth = gr.Checkbox(
+                                label=ui_items["ssii_smooth"],
+                                value=False
+                            )
+                            ssii_seconds = gr.Number(
+                                label=ui_items["ssii_seconds"],
+                                value=0
+                            )
+                        with gr.Row():
+                            gr.HTML("fps >= 30 recommended, caution: generates large gif-files")
+                    with gr.Box():
+                        with gr.Row():
+                            ssii_lores = gr.Checkbox(
+                                label=ui_items["ssii_lores"],
+                                value=True
+                            )
+                            ssii_hires = gr.Checkbox(
+                                label=ui_items["ssii_hires"],
+                                value=True
+                            )
+                        with gr.Row():
+                            ssii_ffmpeg_bat = gr.Checkbox(
+                                label=ui_items["ssii_ffmpeg_bat"],
+                                value=False
+                            )
+                            ssii_bat_only = gr.Checkbox(
+                                label=ui_items["ssii_bat_only"],
+                                value=False
+                            )
                     with gr.Row():
-                        ssii_add_first_frames = gr.Number(
-                            label=ui_items["ssii_add_first_frames"],
-                            value=0
+                        ssii_video_output_path = gr.Textbox(
+                            label=ui_items["ssii_video_output_path"],
+                            placeholder="e.g. C:/videos or leave empty to save next to intermediates",
+                            value=""
                         )
-                        ssii_add_last_frames = gr.Number(
-                            label=ui_items["ssii_add_last_frames"],
-                            value=0
-                        )
-                with gr.Box():
+
+                with gr.Tab("Misc"):
                     with gr.Row():
-                        ssii_smooth = gr.Checkbox(
-                            label=ui_items["ssii_smooth"],
+                        ssii_live_preview = gr.Checkbox(
+                            label=ui_items["ssii_live_preview"],
                             value=False
                         )
-                        
-                        ssii_seconds = gr.Number(
-                            label=ui_items["ssii_seconds"],
-                            value=0
-                        )
                     with gr.Row():
-                        gr.HTML("fps >= 30 recommended, caution: generates large gif-files")
-                with gr.Box():
+                        open_image_viewer_button = gr.Button("Open Image Viewer")
                     with gr.Row():
-                        ssii_lores = gr.Checkbox(
-                            label=ui_items["ssii_lores"],
-                            value=True
-                        )
-                        ssii_hires = gr.Checkbox(
-                            label=ui_items["ssii_hires"],
-                            value=True
-                        )
-                    with gr.Row():
-                        ssii_ffmpeg_bat = gr.Checkbox(
-                            label=ui_items["ssii_ffmpeg_bat"],
+                        ssii_debug = gr.Checkbox(
+                            label=ui_items["ssii_debug"],
                             value=False
                         )
-                        ssii_bat_only = gr.Checkbox(
-                            label=ui_items["ssii_bat_only"],
-                            value=False
-                        )
-            with gr.Row():
-                ssii_video_output_path = gr.Textbox(
-                    label=ui_items["ssii_video_output_path"],
-                    placeholder="e.g. C:/videos or leave empty to save next to intermediates",
-                    value=""
-                )
-            with gr.Row():
-                ssii_debug = gr.Checkbox(
-                    label=ui_items["ssii_debug"],
-                    value=False
-                )
-            
-                ssii_live_preview = gr.Checkbox(
-                    label=ui_items["ssii_live_preview"],
-                    value=False
-                )
-            open_image_viewer_button = gr.Button("Open Image Viewer")
-            open_image_viewer_button.click(fn=self.open_image_viewer)  
-                   
+
+                    open_image_viewer_button.click(fn=self.open_image_viewer)
 
         ssii_save_settings.click(
             fn=ssii_save_settings_do,
