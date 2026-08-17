@@ -3,6 +3,7 @@
 A custom extension for [AUTOMATIC1111/stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui) that implements saving intermediate images.
 
 <img src="images/extension.jpg"/>
+<img src="images/extension2.jpg"/>
 
 ## Installation
 
@@ -10,7 +11,7 @@ The extension can be installed directly from within the **Extensions** tab withi
 
 You can also install it manually by running the following command from within the webui directory:
 
-	git clone https://github.com/AlUlkesh/sd_save_intermediate_images/ extensions/sd_save_intermediate_images
+	git clone https://github.com/r33yl/sd_save_intermediate_images/ extensions/sd_save_intermediate_images
 
 ## Samplers
 Works with all a1111 samplers
